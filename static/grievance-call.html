@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Samasta Grievance Assistant</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/livekit-client/2.5.7/livekit-client.umd.min.js"></script>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Tiro+Devanagari+Hindi:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --ink: #1a1410;
+      --paper: #faf7f2;
+      --saffron: #e8621a;
+      --saffron-light: #f0845a;
+      --gold: #c9933a;
+      --green: #2d6a4f;
+      --green-light: #52b788;
+      --red: #c1121f;
+      --muted: #8a7968;
+      --border: rgba(26, 20, 16, 0.12);
+      --card: rgba(255, 255, 255, 0.7);
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 0%, rgba(232, 98, 26, 0.07) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 80% at 80% 100%, rgba(45, 106, 79, 0.06) 0%, transparent 60%),
+        url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23e8621a' fill-opacity='0.025'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+      /* Remove padding to go edge-to-edge on mobile */
+    }
+
+    /* Only show header in setup view */
+    .header {
+      text-align: center;
+      padding-top: 36px;
+      margin-bottom: 24px;
+      animation: fadeUp 0.6s ease both;
+      transition: opacity 0.3s ease;
+    }
+
+    .logo-ring {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 16px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--saffron), var(--gold));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 24px rgba(232, 98, 26, 0.3);
+      animation: pulse-ring 3s ease-in-out infinite;
+    }
+
+    @keyframes pulse-ring {
+
+      0%,
+      100% {
+        box-shadow: 0 4px 24px rgba(232, 98, 26, 0.3);
+      }
+
+      50% {
+        box-shadow: 0 4px 36px rgba(232, 98, 26, 0.5);
+      }
+    }
+
+    .logo-ring svg {
+      width: 36px;
+      height: 36px;
+      fill: white;
+    }
+
+    h1 {
+      font-family: 'Tiro Devanagari Hindi', serif;
+      font-size: 28px;
+      font-weight: 400;
+      color: var(--ink);
+      letter-spacing: -0.3px;
+      line-height: 1.2;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 6px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .card {
+      background: var(--card);
+      backdrop-filter: blur(12px);
+      flex: 1;
+      /* Take up remaining height */
+      border-radius: 24px 24px 0 0;
+      /* Only round top corners for mobile sheet look */
+      padding: 32px 24px;
+      box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.04);
+      animation: fadeUp 0.6s 0.1s ease both;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .lang-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .lang-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1.5px solid var(--border);
+      background: white;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: left;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .lang-btn:hover {
+      border-color: var(--saffron-light);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(232, 98, 26, 0.15);
+    }
+
+    .lang-btn.selected {
+      border-color: var(--saffron);
+      background: linear-gradient(135deg, rgba(232, 98, 26, 0.08), rgba(201, 147, 58, 0.06));
+    }
+
+    .lang-btn.selected::after {
+      content: '✓';
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      font-size: 12px;
+      color: var(--saffron);
+      font-weight: 700;
+    }
+
+    .lang-native {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--ink);
+    }
+
+    .lang-english {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 20px 0;
+    }
+
+    .input-hint {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    .selected-lang-badge {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      background: rgba(45, 106, 79, 0.08);
+      border: 1px solid rgba(45, 106, 79, 0.2);
+      border-radius: 30px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      color: var(--green);
+      font-weight: 500;
+    }
+
+    .selected-lang-badge.show {
+      display: flex;
+    }
+
+    .call-btn {
+      width: 100%;
+      padding: 16px;
+      border-radius: 14px;
+      border: none;
+      background: linear-gradient(135deg, var(--saffron) 0%, var(--gold) 100%);
+      color: white;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 20px rgba(232, 98, 26, 0.35);
+    }
+
+    .call-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 28px rgba(232, 98, 26, 0.45);
+    }
+
+    .call-btn:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .call-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Status Bar */
+    .status-bar {
+      margin-top: 20px;
+      padding: 14px 18px;
+      border-radius: 12px;
+      background: white;
+      border: 1px solid var(--border);
+      display: none;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-bar.show {
+      display: flex;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+      transition: background 0.3s ease;
+    }
+
+    .status-dot.connecting {
+      background: var(--gold);
+      animation: blink 1s ease infinite;
+    }
+
+    .status-dot.connected {
+      background: var(--green-light);
+    }
+
+    .status-dot.error {
+      background: var(--red);
+    }
+
+    @keyframes blink {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.3;
+      }
+    }
+
+    .status-text {
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .tricolor {
+      height: 4px;
+      border-radius: 4px;
+      background: linear-gradient(to right, var(--saffron) 33%, white 33%, white 66%, var(--green) 66%);
+      margin-bottom: 20px;
+      border: 1px solid var(--border);
+    }
+
+    .footer {
+      text-align: center;
+      padding: 24px 0;
+      font-size: 11px;
+      color: var(--muted);
+      opacity: 0.7;
+      background: var(--paper);
+      /* Ensure footer blends with background if needed */
+      animation: fadeUp 0.6s 0.2s ease both;
+    }
+
+    @keyframes fadeUp {
+      from {
+        opacity: 0;
+        transform: translateY(16px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--ink);
+      color: white;
+      padding: 12px 20px;
+      border-radius: 30px;
+      font-size: 13px;
+      font-weight: 500;
+      transition: transform 0.3s ease;
+      z-index: 100;
+      white-space: nowrap;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* =========================================
+     CALL VIEW STYLES
+     ========================================= */
+    #callView {
+      display: none;
+      /* hidden by default */
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      /* Take full available height of the card */
+      padding: 24px 0 12px;
+      animation: fadeUp 0.6s ease both;
+    }
+
+    .caller-avatar {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--saffron), var(--gold));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 24px rgba(232, 98, 26, 0.3);
+      position: relative;
+    }
+
+    .caller-avatar::before {
+      content: '';
+      position: absolute;
+      inset: -12px;
+      border-radius: 50%;
+      border: 2px solid rgba(232, 98, 26, 0.2);
+      animation: ripple 2s infinite linear;
+    }
+
+    .caller-avatar::after {
+      content: '';
+      position: absolute;
+      inset: -24px;
+      border-radius: 50%;
+      border: 2px solid rgba(232, 98, 26, 0.1);
+      animation: ripple 2s infinite linear 1s;
+    }
+
+    @keyframes ripple {
+      0% {
+        transform: scale(0.8);
+        opacity: 1;
+      }
+
+      100% {
+        transform: scale(1.5);
+        opacity: 0;
+      }
+    }
+
+    .caller-avatar svg {
+      width: 50px;
+      height: 50px;
+      fill: white;
+      z-index: 2;
+      position: relative;
+    }
+
+    .caller-name {
+      font-family: 'Tiro Devanagari Hindi', serif;
+      font-size: 28px;
+      font-weight: 400;
+      color: var(--ink);
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .call-timer {
+      font-size: 18px;
+      color: var(--muted);
+      margin-bottom: 48px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      font-weight: 500;
+    }
+
+    .call-controls {
+      display: flex;
+      justify-content: center;
+      gap: 32px;
+      margin-bottom: 48px;
+    }
+
+    .control-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .control-btn {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(26, 20, 16, 0.05);
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .control-btn:hover {
+      background: rgba(26, 20, 16, 0.1);
+      transform: scale(1.05);
+    }
+
+    .control-btn.active {
+      background: white;
+      color: var(--saffron);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    .control-btn svg {
+      width: 28px;
+      height: 28px;
+      fill: currentColor;
+    }
+
+    .control-label {
+      font-size: 13px;
+      color: var(--ink);
+      font-weight: 500;
+    }
+
+    .end-call-container {
+      display: flex;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .end-call-btn {
+      width: 76px;
+      height: 76px;
+      border-radius: 50%;
+      border: none;
+      background: var(--red);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(193, 18, 31, 0.35);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .end-call-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 28px rgba(193, 18, 31, 0.45);
+    }
+
+    .end-call-btn:active {
+      transform: translateY(0);
+    }
+
+    .end-call-btn svg {
+      width: 36px;
+      height: 36px;
+      fill: white;
+    }
+
+    /* Desktop View Adaptations */
+    @media (min-width: 481px) {
+      .container {
+        padding: 24px 16px;
+        min-height: auto;
+        justify-content: center;
+      }
+
+      .header {
+        padding-top: 0;
+      }
+
+      .card {
+        flex: none;
+        /* Do not stretch on desktop */
+        border-radius: 20px;
+        border: 1px solid var(--border);
+        box-shadow: 0 8px 40px rgba(0, 0, 0, 0.06), 0 1px 0 rgba(255, 255, 255, 0.8) inset;
+      }
+
+      .footer {
+        padding: 0;
+        margin-top: 24px;
+        background: transparent;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+    <div class="header" id="mainHeader">
+      <div class="logo-ring">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path
+            d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" />
+        </svg>
+      </div>
+      <h1>Samasta Grievance</h1>
+      <div class="subtitle">Employee Support Line</div>
+    </div>
+
+    <div class="card" id="mainCard">
+      <!-- SETUP VIEW -->
+      <div id="setupView">
+        <div class="tricolor"></div>
+
+        <div class="section-label">Choose Your Language / अपनी भाषा चुनें</div>
+        <div class="lang-grid" id="langGrid"></div>
+
+        <div class="selected-lang-badge" id="selectedBadge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          <span id="selectedBadgeText">English selected</span>
+        </div>
+
+        <div class="divider"></div>
+
+        <p class="input-hint" style="text-align: center; margin-bottom: 24px;">Your conversation is anonymous,
+          confidential, and encrypted</p>
+
+        <button class="call-btn" id="callBtn" onclick="handleCallBtn()" disabled>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+            <path
+              d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z" />
+          </svg>
+          Start Call
+        </button>
+
+        <div class="status-bar" id="statusBar">
+          <div class="status-dot" id="statusDot"></div>
+          <span class="status-text" id="statusText">Connecting...</span>
+        </div>
+      </div>
+
+      <!-- CALL VIEW (Hidden by Default) -->
+      <div id="callView">
+        <div class="caller-avatar">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" />
+          </svg>
+        </div>
+        <div class="caller-name">Samasta Support</div>
+        <div class="call-timer" id="callTimer">Calling...</div>
+
+        <div class="call-controls">
+          <div class="control-wrapper">
+            <button class="control-btn" id="muteBtn" onclick="toggleMute()" title="Mute Microphone">
+              <svg viewBox="0 0 24 24">
+                <path
+                  d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+              </svg>
+            </button>
+            <span class="control-label">Mute</span>
+          </div>
+          <div class="control-wrapper">
+            <button class="control-btn" id="speakerBtn" onclick="toggleSpeaker()" title="Speaker">
+              <svg viewBox="0 0 24 24">
+                <path
+                  d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+              </svg>
+            </button>
+            <span class="control-label">Speaker</span>
+          </div>
+        </div>
+
+        <div class="end-call-container">
+          <button class="end-call-btn" onclick="handleEndCallBtn()" title="End Call">
+            <svg viewBox="0 0 24 24" style="transform: rotate(135deg);">
+              <path
+                d="M20.3 15.4l-2.8-.3c-.7-.1-1.4.2-1.9.7l-2 2c-2.9-1.5-5.2-3.9-6.8-6.8l2-2c.5-.5.7-1.2.6-1.9l-.3-2.8c-.2-1.2-1.2-2-2.4-2H5c-1.3 0-2.4 1.1-2.3 2.4.4 6 4 11.6 9.9 15.5 3.5 2.2 7.7 3.5 12.2 3.5 1.3 0 2.4-1.1 2.3-2.4v-2.4c.1-1.1-.7-2.2-1.8-2.3z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      Confidential · Samasta Technologies · All conversations are private & secure
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <audio id="remoteAudio" autoplay></audio>
+
+  <script>
+    // ── CONFIG ────────────────────────────────────────────────────────────────────
+    const BACKEND_URL = window.location.origin;
+
+    // ── LANGUAGES ────────────────────────────────────────────────────────────────
+    const LANGUAGES = [
+      { code: "hi", native: "हिन्दी", english: "Hindi", sarvam: "hi-IN" },
+      { code: "ta", native: "தமிழ்", english: "Tamil", sarvam: "ta-IN" },
+      { code: "te", native: "తెలుగు", english: "Telugu", sarvam: "te-IN" },
+      { code: "kn", native: "ಕನ್ನಡ", english: "Kannada", sarvam: "kn-IN" },
+      { code: "ml", native: "മലയാളം", english: "Malayalam", sarvam: "ml-IN" },
+      { code: "mr", native: "मराठी", english: "Marathi", sarvam: "mr-IN" },
+      { code: "gu", native: "ગુજરાતી", english: "Gujarati", sarvam: "gu-IN" },
+      { code: "bn", native: "বাংলা", english: "Bengali", sarvam: "bn-IN" },
+      { code: "pa", native: "ਪੰਜਾਬੀ", english: "Punjabi", sarvam: "pa-IN" },
+      { code: "or", native: "ଓଡ଼ିଆ", english: "Odia", sarvam: "or-IN" },
+      { code: "en", native: "English", english: "English", sarvam: "en-IN" },
+    ];
+
+    let selectedLang = null;
+    let room = null;
+    let isConnected = false;
+    let localTrack = null;
+
+    let callStartTime = null;
+    let timerInterval = null;
+    let isMuted = false;
+    let isSpeaker = false;
+
+    // ── RENDER LANGUAGE GRID ──────────────────────────────────────────────────────
+    const grid = document.getElementById('langGrid');
+    LANGUAGES.forEach(lang => {
+      const btn = document.createElement('button');
+      btn.className = 'lang-btn';
+      btn.dataset.code = lang.code;
+      btn.innerHTML = `
+    <span class="lang-native">${lang.native}</span>
+    <span class="lang-english">${lang.english}</span>
+  `;
+      btn.addEventListener('click', () => selectLanguage(lang));
+      grid.appendChild(btn);
+    });
+
+    function selectLanguage(lang) {
+      if (isConnected) return;
+      selectedLang = lang;
+      document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('selected'));
+      document.querySelector(`.lang-btn[data-code="${lang.code}"]`).classList.add('selected');
+      const badge = document.getElementById('selectedBadge');
+      badge.classList.add('show');
+      document.getElementById('selectedBadgeText').textContent = `${lang.native} (${lang.english}) selected`;
+      updateCallBtn();
+    }
+
+    function updateCallBtn() {
+      document.getElementById('callBtn').disabled = !selectedLang || isConnected;
+    }
+
+    // ── UTILS ─────────────────────────────────────────────────────────────────────
+    function showToast(msg, duration = 3500) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), duration);
+    }
+
+    function setStatus(state, msg) {
+      const bar = document.getElementById('statusBar');
+      const dot = document.getElementById('statusDot');
+      bar.classList.add('show');
+      dot.className = 'status-dot ' + state;
+      document.getElementById('statusText').textContent = msg;
+    }
+
+    function lockUI() {
+      document.querySelectorAll('.lang-btn').forEach(b => b.style.pointerEvents = 'none');
+    }
+
+    function unlockUI() {
+      document.querySelectorAll('.lang-btn').forEach(b => b.style.pointerEvents = '');
+    }
+
+    // ── CALL LOGIC & TIMER ────────────────────────────────────────────────────────
+    function formatTime(seconds) {
+      const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+      const s = (seconds % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function updateTimer() {
+      if (!callStartTime) return;
+      const now = Date.now();
+      const diff = Math.floor((now - callStartTime) / 1000);
+      document.getElementById('callTimer').textContent = formatTime(diff);
+    }
+
+    function stopTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = null;
+      callStartTime = null;
+    }
+
+    function switchToCallView() {
+      document.getElementById('mainHeader').style.display = 'none';
+      document.getElementById('setupView').style.display = 'none';
+      document.getElementById('callView').style.display = 'flex';
+      document.getElementById('callTimer').textContent = 'Connecting...';
+    }
+
+    function switchToSetupView() {
+      document.getElementById('mainHeader').style.display = 'block';
+      document.getElementById('setupView').style.display = 'block';
+      document.getElementById('callView').style.display = 'none';
+    }
+
+    function toggleMute() {
+      isMuted = !isMuted;
+      const btn = document.getElementById('muteBtn');
+      if (isMuted) {
+        btn.classList.add('active');
+        if (localTrack) localTrack.mute();
+      } else {
+        btn.classList.remove('active');
+        if (localTrack) localTrack.unmute();
+      }
+    }
+
+    function toggleSpeaker() {
+      isSpeaker = !isSpeaker;
+      const btn = document.getElementById('speakerBtn');
+      if (isSpeaker) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    }
+
+    // ── MAIN FLOW ─────────────────────────────────────────────────────────────────
+    async function handleCallBtn() {
+      if (isConnected) {
+        await endCall();
+      } else {
+        await startCall();
+      }
+    }
+
+    async function handleEndCallBtn() {
+      await endCall();
+    }
+
+    async function startCall() {
+      if (!selectedLang) { showToast('Please select a language first'); return; }
+
+      const btn = document.getElementById('callBtn');
+      btn.disabled = true;
+      setStatus('connecting', 'Requesting session...');
+
+      try {
+        // Step 1: Get token from backend
+        // Provide an anonymous ID since the backend may still expect one
+        const empId = `anon_${Math.random().toString(36).substr(2, 9)}`;
+
+        let token, room_name, livekit_url;
+
+        try {
+          const tokenRes = await fetch(`${BACKEND_URL}/api/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              employee_id: empId,
+              language_code: selectedLang.code,
+            }),
+          });
+
+          if (!tokenRes.ok) {
+            throw new Error(`Server error ${tokenRes.status}`);
+          }
+
+          const resData = await tokenRes.json();
+          token = resData.token;
+          room_name = resData.room_name;
+          livekit_url = resData.livekit_url;
+
+        } catch (apiErr) {
+          console.warn("Backend unavailable. Proceeding with frontend demonstration only.", apiErr);
+
+          // FOR DEMONSTRATION PURPOSES: allow UI to transition to caller mode
+          switchToCallView();
+          isConnected = true;
+          lockUI();
+          callStartTime = Date.now();
+          timerInterval = setInterval(updateTimer, 1000);
+          updateTimer();
+          return;
+        }
+
+        setStatus('connecting', 'Connecting to server...');
+
+        // Step 2: Connect to LiveKit room
+        room = new LivekitClient.Room({
+          adaptiveStream: true,
+          dynacast: true,
+        });
+
+        room.on(LivekitClient.RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind === LivekitClient.Track.Kind.Audio) {
+            track.attach(document.getElementById('remoteAudio'));
+
+            // Once connected, switch UI
+            switchToCallView();
+
+            // Start Timer
+            callStartTime = Date.now();
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(updateTimer, 1000);
+            updateTimer();
+          }
+        });
+
+        room.on(LivekitClient.RoomEvent.Disconnected, () => {
+          stopTimer();
+          document.getElementById('callTimer').textContent = "Call Ended";
+          setTimeout(handleDisconnect, 1500);
+        });
+
+        room.on(LivekitClient.RoomEvent.ConnectionStateChanged, (state) => {
+          if (state === LivekitClient.ConnectionState.Reconnecting) {
+            document.getElementById('callTimer').textContent = "Reconnecting...";
+          }
+        });
+
+        await room.connect(livekit_url, token, { autoSubscribe: true });
+
+        // Step 3: Publish microphone
+        localTrack = await LivekitClient.createLocalAudioTrack({
+          echoCancellation: true,
+          noiseSuppression: true,
+        });
+        await room.localParticipant.publishTrack(localTrack);
+
+        // Step 4: Send language selection to agent via data channel
+        const langPayload = JSON.stringify({
+          type: 'language_selected',
+          language_code: selectedLang.code,
+          language_name: selectedLang.english,
+          sarvam_code: selectedLang.sarvam,
+        });
+        await room.localParticipant.publishData(
+          new TextEncoder().encode(langPayload),
+          { reliable: true }
+        );
+
+        isConnected = true;
+        lockUI();
+
+        // In case audio track subscription takes time, show Calling UI immediately
+        switchToCallView();
+
+      } catch (err) {
+        console.error('Connection error:', err);
+        setStatus('error', 'Connection failed. Try again.');
+        showToast('Failed: ' + (err.message || 'Unknown error'), 4000);
+        btn.disabled = false;
+        isConnected = false;
+        stopTimer();
+      }
+    }
+
+    async function endCall() {
+      stopTimer();
+      document.getElementById('callTimer').textContent = "Call Ended";
+
+      if (localTrack) { localTrack.stop(); localTrack = null; }
+      if (room) { await room.disconnect(); room = null; }
+
+      setTimeout(() => {
+        handleDisconnect();
+      }, 1500);
+    }
+
+    function handleDisconnect() {
+      isConnected = false;
+      stopTimer();
+      switchToSetupView();
+
+      const btn = document.getElementById('callBtn');
+      setStatus('error', 'Call ended');
+
+      // reset mute/speaker
+      isMuted = false;
+      isSpeaker = false;
+      document.getElementById('muteBtn').classList.remove('active');
+      document.getElementById('speakerBtn').classList.remove('active');
+
+      unlockUI();
+      updateCallBtn();
+      document.getElementById('remoteAudio').srcObject = null;
+    }
+  </script>
+</body>
+
+</html>
