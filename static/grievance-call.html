@@ -915,18 +915,6 @@
         });
         await room.localParticipant.publishTrack(localTrack);
 
-        // Step 4: Send language selection to agent via data channel
-        const langPayload = JSON.stringify({
-          type: 'language_selected',
-          language_code: selectedLang.code,
-          language_name: selectedLang.english,
-          sarvam_code: selectedLang.sarvam,
-        });
-        await room.localParticipant.publishData(
-          new TextEncoder().encode(langPayload),
-          { reliable: true }
-        );
-
         isConnected = true;
         lockUI();
 
@@ -936,10 +924,19 @@
       } catch (err) {
         console.error('Connection error:', err);
         setStatus('error', 'Connection failed. Try again.');
-        showToast('Failed: ' + (err.message || 'Unknown error'), 4000);
+
+        let errMsg = err.message || 'Unknown error';
+        if (errMsg.includes('getUserMedia')) {
+          errMsg = 'Microphone access denied. Please use HTTPS or localhost.';
+        }
+        showToast('Failed: ' + errMsg, 4000);
+
+        const btn = document.getElementById('callBtn');
         btn.disabled = false;
         isConnected = false;
         stopTimer();
+        unlockUI();
+        switchToSetupView(); // Reset the UI so they aren't stuck on the connecting screen
       }
     }
 

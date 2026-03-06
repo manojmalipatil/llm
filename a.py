@@ -3,6 +3,7 @@ import os
 import sqlite3
 import uuid
 import json
+import wave
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -29,6 +30,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("GrievanceBot")
 
+# --- Recordings Directory ---
+RECORDINGS_DIR = "recordings"
+os.makedirs(RECORDINGS_DIR, exist_ok=True)
+logger.info(f"[RECORDING] Recordings directory ready: {RECORDINGS_DIR}")
+
 
 # --- Load Language Configuration ---
 def load_language_config(config_path="language_config.json"):
@@ -50,6 +56,78 @@ GRIEVANCE_PROMPTS = LANGUAGE_CONFIG["grievance_prompts"]
 
 
 # ---------------------------------------------------------------------------
+# Audio Recorder — captures participant audio to a WAV file
+# ---------------------------------------------------------------------------
+class AudioRecorder:
+    """
+    Subscribes to a RemoteParticipant's audio track and writes all
+    received PCM frames to a WAV file.  The file is finalised (and
+    its path returned) when stop() is called.
+    """
+
+    SAMPLE_RATE  = 16_000   # Hz  — must match the audio stream
+    NUM_CHANNELS = 1        # mono
+
+    def __init__(self, record_id: str):
+        self.record_id   = record_id
+        self.output_path = os.path.join(RECORDINGS_DIR, f"{record_id}.wav")
+        self._frames: list[bytes] = []
+        self._stream: rtc.AudioStream | None = None
+        self._task:   asyncio.Task  | None = None
+        self._stopped = False
+
+    # ------------------------------------------------------------------
+    def start(self, track: rtc.Track):
+        """Attach to an audio track and begin buffering frames."""
+        self._stream = rtc.AudioStream(
+            track,
+            sample_rate=self.SAMPLE_RATE,
+            num_channels=self.NUM_CHANNELS,
+        )
+        self._task = asyncio.create_task(self._record_loop())
+        logger.info(f"[RECORDING] ▶ Started recording → {self.output_path}")
+
+    async def _record_loop(self):
+        try:
+            async for event in self._stream:
+                if self._stopped:
+                    break
+                if isinstance(event, rtc.AudioFrameEvent):
+                    self._frames.append(bytes(event.frame.data))
+        except Exception as e:
+            logger.error(f"[RECORDING] Error in record loop: {e}")
+
+    # ------------------------------------------------------------------
+    async def stop(self) -> str | None:
+        """Stop recording and flush the WAV file.  Returns the file path."""
+        self._stopped = True
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+
+        if not self._frames:
+            logger.warning("[RECORDING] No audio frames captured — skipping WAV write")
+            return None
+
+        def _write_wav():
+            with wave.open(self.output_path, "wb") as wf:
+                wf.setnchannels(self.NUM_CHANNELS)
+                wf.setsampwidth(2)   # 16-bit PCM = 2 bytes per sample
+                wf.setframerate(self.SAMPLE_RATE)
+                for frame in self._frames:
+                    wf.writeframes(frame)
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _write_wav)
+        logger.info(f"[RECORDING] ■ Saved WAV → {self.output_path} "
+                    f"({len(self._frames)} frames)")
+        return self.output_path
+
+
+# ---------------------------------------------------------------------------
 # SQLite Database Manager
 # ---------------------------------------------------------------------------
 class DatabaseManager:
@@ -63,24 +141,32 @@ class DatabaseManager:
         cursor = conn.cursor()
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS grievances (
-                id          TEXT PRIMARY KEY,
-                timestamp   TEXT NOT NULL,
-                transcript  TEXT NOT NULL,
-                language    TEXT,
-                created_at  TEXT NOT NULL,
-                status      TEXT DEFAULT 'pending'
+                id              TEXT PRIMARY KEY,
+                timestamp       TEXT NOT NULL,
+                transcript      TEXT NOT NULL,
+                language        TEXT,
+                created_at      TEXT NOT NULL,
+                status          TEXT DEFAULT 'pending',
+                recording_path  TEXT
             )
         """)
         conn.commit()
         conn.close()
         logger.info(f"[DB] SQLite ready at {self.db_path}")
 
-    async def save_grievance(self, transcript: str, language: str = "en") -> str | None:
+    async def save_grievance(
+        self,
+        transcript:     str,
+        language:       str = "en",
+        recording_path: str | None = None,
+        record_id:      str | None = None,   # ← pass in so recorder & DB share the same ID
+    ) -> str | None:
         if not transcript.strip():
             logger.warning("[DB] Empty transcript — skipping save")
             return None
 
-        record_id    = str(uuid.uuid4())
+        if record_id is None:
+            record_id = str(uuid.uuid4())
         current_time = datetime.utcnow().isoformat()
 
         def _write():
@@ -88,13 +174,16 @@ class DatabaseManager:
             try:
                 conn.execute(
                     """
-                    INSERT INTO grievances (id, timestamp, transcript, language, created_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO grievances
+                        (id, timestamp, transcript, language, created_at, recording_path)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (record_id, current_time, transcript, language, current_time),
+                    (record_id, current_time, transcript, language,
+                     current_time, recording_path),
                 )
                 conn.commit()
-                logger.info(f"[DB] Saved grievance ID: {record_id} (lang={language})")
+                logger.info(f"[DB] Saved grievance ID: {record_id} "
+                            f"(lang={language}, recording={recording_path})")
                 return record_id
             except Exception as e:
                 logger.error(f"[DB] Error saving grievance: {e}")
@@ -142,6 +231,12 @@ async def entrypoint(ctx: JobContext):
     grievance_tracker = GrievanceTracker()
     should_end_call   = asyncio.Event()
 
+    # Generate the shared record ID up-front so recorder & DB use the same UUID
+    record_id = str(uuid.uuid4())
+    logger.info(f"[SESSION] Record ID for this call: {record_id}")
+
+    audio_recorder: AudioRecorder | None = None
+
     await ctx.connect()
 
     # -----------------------------------------------------------------------
@@ -152,15 +247,13 @@ async def entrypoint(ctx: JobContext):
 
     logger.info("[LANG] Waiting for remote participant to join and provide language metadata...")
     participant_joined = asyncio.Event()
-    found_participant = None
+    found_participant  = None
 
-    # Check if they are already in the remote dict
     for p in ctx.room.remote_participants.values():
         found_participant = p
         participant_joined.set()
         break
 
-    # If not, wait for the participant_connected event
     def on_participant_connected(p: rtc.RemoteParticipant):
         nonlocal found_participant
         found_participant = p
@@ -192,6 +285,29 @@ async def entrypoint(ctx: JobContext):
 
     grievance_tracker.set_language(selected_lang_code)
     logger.info(f"[LANG] Set from metadata → {selected_lang_code} / TTS: {selected_sarvam_code}")
+
+    # -----------------------------------------------------------------------
+    # Subscribe to participant audio track for recording
+    # -----------------------------------------------------------------------
+    def on_track_subscribed(
+        track:       rtc.Track,
+        publication: rtc.RemoteTrackPublication,
+        participant: rtc.RemoteParticipant,
+    ):
+        nonlocal audio_recorder
+        if track.kind == rtc.TrackKind.KIND_AUDIO:
+            audio_recorder = AudioRecorder(record_id)
+            audio_recorder.start(track)
+
+    ctx.room.on("track_subscribed", on_track_subscribed)
+
+    # Also check for tracks that are already published
+    if found_participant:
+        for pub in found_participant.track_publications.values():
+            if pub.track and pub.track.kind == rtc.TrackKind.KIND_AUDIO:
+                audio_recorder = AudioRecorder(record_id)
+                audio_recorder.start(pub.track)
+                break
 
     # -----------------------------------------------------------------------
     # Grievance collection session
@@ -248,10 +364,10 @@ async def entrypoint(ctx: JobContext):
     await asyncio.sleep(0.5)
 
     try:
-        session.allow_interruptions = False 
+        session.allow_interruptions = False
         logger.info("[STAGE] Generating initial greeting (Interruptions Disabled)")
         await session.generate_reply()
-        while session.is_speaking: 
+        while session.is_speaking:
             await asyncio.sleep(0.1)
         logger.info("[STAGE] ✓ Initial greeting sent and completed")
     except Exception as e:
@@ -264,7 +380,7 @@ async def entrypoint(ctx: JobContext):
     await should_end_call.wait()
 
     logger.info("[STAGE] Call ending — waiting for farewell audio...")
-    await asyncio.sleep(16.0)
+    await asyncio.sleep(12.0)
 
     # -----------------------------------------------------------------------
     # Cleanup & save
@@ -281,11 +397,22 @@ async def entrypoint(ctx: JobContext):
     except asyncio.CancelledError:
         pass
 
+    # Stop recording and get WAV path
+    recording_path = None
+    if audio_recorder:
+        recording_path = await audio_recorder.stop()
+
+    # Save transcript + recording path under the same record_id
     full_log = grievance_tracker.get_full_grievance()
     if full_log.strip():
         logger.info(f"[CLEANUP] Saving transcript ({len(full_log)} chars) to SQLite...")
-        record_id = await db_manager.save_grievance(full_log, selected_lang_code)
-        logger.info(f"[CLEANUP] ✓ Saved — ID: {record_id}")
+        saved_id = await db_manager.save_grievance(
+            full_log,
+            selected_lang_code,
+            recording_path=recording_path,
+            record_id=record_id,
+        )
+        logger.info(f"[CLEANUP] ✓ Saved — ID: {saved_id}, recording: {recording_path}")
     else:
         logger.warning("[CLEANUP] ⚠ No content to save")
 
