@@ -142,7 +142,6 @@ def process_grievances_continuously():
                             processed_at = ?,
                             analysis_json = ?,
                             name = ?,
-                            emp_id = ?, 
                             location = ?,
                             status = 'Recorded'
                         WHERE id = ?
@@ -157,7 +156,6 @@ def process_grievances_continuously():
                         datetime.now().isoformat(),
                         json.dumps(analysis),
                         analysis.get("name", "Unknown"),
-                        analysis.get("emp_id", "Unknown"),
                         llm_location,
                         gid
                     ))

@@ -235,6 +235,72 @@
       display: flex;
     }
 
+    /* Form Fields */
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink);
+      margin-bottom: 8px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px;
+      color: var(--ink);
+      background: white;
+      transition: all 0.2s ease;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--saffron);
+      box-shadow: 0 0 0 3px rgba(232, 98, 26, 0.1);
+    }
+
+    .radio-group {
+      display: flex;
+      gap: 12px;
+    }
+
+    .radio-label {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      background: white;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+
+    .radio-label:hover {
+      border-color: var(--saffron-light);
+    }
+
+    .radio-input {
+      display: none;
+    }
+
+    .radio-input:checked+.radio-label {
+      border-color: var(--saffron);
+      background: linear-gradient(135deg, rgba(232, 98, 26, 0.08), rgba(201, 147, 58, 0.06));
+      color: var(--saffron);
+    }
+
     .call-btn {
       width: 100%;
       padding: 16px;
@@ -605,6 +671,24 @@
           <span id="selectedBadgeText">English selected</span>
         </div>
 
+        <div class="form-group">
+          <label for="empIdInput">Employee ID</label>
+          <input type="text" id="empIdInput" class="form-input" placeholder="e.g. EMP123" oninput="updateCallBtn()">
+        </div>
+
+        <div class="form-group">
+          <label>Is this grievance confidential?</label>
+          <div class="radio-group">
+            <input type="radio" name="isConfidential" id="confidentialYes" value="yes" class="radio-input"
+              onchange="updateCallBtn()">
+            <label for="confidentialYes" class="radio-label">Yes</label>
+
+            <input type="radio" name="isConfidential" id="confidentialNo" value="no" class="radio-input"
+              onchange="updateCallBtn()">
+            <label for="confidentialNo" class="radio-label">No</label>
+          </div>
+        </div>
+
         <div class="divider"></div>
 
         <p class="input-hint" style="text-align: center; margin-bottom: 24px;">Your conversation is anonymous,
@@ -730,7 +814,9 @@
     }
 
     function updateCallBtn() {
-      document.getElementById('callBtn').disabled = !selectedLang || isConnected;
+      const empId = document.getElementById('empIdInput').value.trim();
+      const confRadio = document.querySelector('input[name="isConfidential"]:checked');
+      document.getElementById('callBtn').disabled = !selectedLang || isConnected || empId === '' || !confRadio;
     }
 
     // ── UTILS ─────────────────────────────────────────────────────────────────────
@@ -827,6 +913,12 @@
 
     async function startCall() {
       if (!selectedLang) { showToast('Please select a language first'); return; }
+      const empIdInput = document.getElementById('empIdInput').value.trim();
+      if (!empIdInput) { showToast('Please enter your Employee ID'); return; }
+      const confRadio = document.querySelector('input[name="isConfidential"]:checked');
+      if (!confRadio) { showToast('Please select confidentiality preference'); return; }
+
+      const isConfidential = confRadio.value === 'yes';
 
       const btn = document.getElementById('callBtn');
       btn.disabled = true;
@@ -834,8 +926,8 @@
 
       try {
         // Step 1: Get token from backend
-        // Provide an anonymous ID since the backend may still expect one
-        const empId = `anon_${Math.random().toString(36).substr(2, 9)}`;
+        // Try passing the explicit employee id, with a fallback just in case
+        const empId = empIdInput || `anon_${Math.random().toString(36).substr(2, 9)}`;
 
         let token, room_name, livekit_url;
 
@@ -846,6 +938,7 @@
             body: JSON.stringify({
               employee_id: empId,
               language_code: selectedLang.code,
+              is_confidential: isConfidential
             }),
           });
 

@@ -10,3 +10,11 @@ wheels/
 .venv
 .env
 grievance.db
+certificate.crt
+certificate.pem
+chain.pem
+fullchain.pem
+leaf.pem
+private_clean.key
+private_nopass.key
+private.key 

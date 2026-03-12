@@ -23,6 +23,10 @@ from dotenv import load_dotenv
 
 from livekit.api import AccessToken, VideoGrants
 
+import threading
+from starlette.responses import RedirectResponse
+from starlette.requests import Request
+
 load_dotenv()
 
 logging.basicConfig(
@@ -64,7 +68,8 @@ def startup_db():
             transcript  TEXT NOT NULL,
             language    TEXT,
             created_at  TEXT NOT NULL,
-            status      TEXT DEFAULT 'pending'
+            status      TEXT DEFAULT 'pending',
+            is_confidential INTEGER DEFAULT 0
         )
     """)
     conn.commit()
@@ -76,9 +81,10 @@ def startup_db():
 # MODELS
 # ─────────────────────────────────────────────
 class TokenRequest(BaseModel):
-    employee_id:   str
-    language_code: Optional[str] = "en"
-    room_name:     Optional[str] = None
+    employee_id:     str
+    language_code:   Optional[str] = "en"
+    room_name:       Optional[str] = None
+    is_confidential: Optional[bool] = False
 
 class TokenResponse(BaseModel):
     token:         str
@@ -125,10 +131,14 @@ async def generate_token(req: TokenRequest):
                 can_publish=True,
                 can_subscribe=True,
             ))
-            .with_metadata(json.dumps({"language_code": req.language_code}))
+            .with_metadata(json.dumps({
+                "language_code": req.language_code,
+                "is_confidential": req.is_confidential,
+                "employee_id": req.employee_id
+            }))
             .to_jwt()
         )
-        logger.info(f"[TOKEN] employee={req.employee_id} room={room_name} lang={req.language_code}")
+        logger.info(f"[TOKEN] employee={req.employee_id} room={room_name} lang={req.language_code} confidential={req.is_confidential}")
         return TokenResponse(
             token=token,
             room_name=room_name,
@@ -199,7 +209,48 @@ except Exception:
         return {"message": "Backend running. Place grievance-call.html in /static/"}
 
 
+# ─────────────────────────────────────────────
+# HTTP -> HTTPS REDIRECTOR
+# ─────────────────────────────────────────────
+redirect_app = FastAPI()
+
+@redirect_app.route("/{path:path}")
+async def redirect_to_https(request: Request, path: str):
+    # Get the target HTTPS port from your environment or use the default
+    https_port = int(os.getenv("PORT", 5000))
+    
+    # Rebuild the URL to force HTTPS and point to your secure port
+    # If your HTTPS port is 443 (standard), you don't need to specify the port in the URL.
+    if https_port == 443:
+        url = request.url.replace(scheme="https", port=None)
+    else:
+        url = request.url.replace(scheme="https", port=https_port)
+        
+    return RedirectResponse(url, status_code=301)
+
+def run_http_redirector():
+    import uvicorn
+    # Listens on port 80 for standard HTTP traffic
+    uvicorn.run(redirect_app, host="0.0.0.0", port=80, log_level="warning")
+
+
+# ─────────────────────────────────────────────
+# MAIN SERVER LAUNCH
+# ─────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run("backend:app", host="0.0.0.0", port=port, reload=False)
+    port = int(os.getenv("PORT", 5000))
+
+    # 1. Start the HTTP redirector in a background thread
+    threading.Thread(target=run_http_redirector, daemon=True).start()
+    logger.info("[SERVER] Started HTTP to HTTPS redirector on port 80")
+
+    # 2. Start your main HTTPS app on the main thread
+    uvicorn.run(
+        "backend:app",
+        host="0.0.0.0",
+        port=port,
+        reload=False,
+        ssl_certfile="fullchain.pem",
+        ssl_keyfile="private_nopass.key",
+    )

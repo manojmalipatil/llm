@@ -68,33 +68,35 @@ class DatabaseManager:
                 transcript  TEXT NOT NULL,
                 language    TEXT,
                 created_at  TEXT NOT NULL,
-                status      TEXT DEFAULT 'pending'
+                status      TEXT DEFAULT 'pending',
+                is_confidential INTEGER DEFAULT 0
             )
         """)
         conn.commit()
         conn.close()
         logger.info(f"[DB] SQLite ready at {self.db_path}")
 
-    async def save_grievance(self, transcript: str, language: str = "en") -> str | None:
+    async def save_grievance(self, transcript: str, language: str = "en", emp_id: str = "Unknown", is_confidential: bool = False) -> str | None:
         if not transcript.strip():
             logger.warning("[DB] Empty transcript — skipping save")
             return None
 
         record_id    = str(uuid.uuid4())
         current_time = datetime.utcnow().isoformat()
+        confidential_int = 1 if is_confidential else 0
 
         def _write():
             conn = sqlite3.connect(self.db_path)
             try:
                 conn.execute(
                     """
-                    INSERT INTO grievances (id, timestamp, transcript, language, created_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO grievances (id, timestamp, transcript, language, created_at, emp_id, is_confidential)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (record_id, current_time, transcript, language, current_time),
+                    (record_id, current_time, transcript, language, current_time, emp_id, confidential_int),
                 )
                 conn.commit()
-                logger.info(f"[DB] Saved grievance ID: {record_id} (lang={language})")
+                logger.info(f"[DB] Saved grievance ID: {record_id} (lang={language}, emp_id={emp_id}, confidential={confidential_int})")
                 return record_id
             except Exception as e:
                 logger.error(f"[DB] Error saving grievance: {e}")
@@ -149,6 +151,8 @@ async def entrypoint(ctx: JobContext):
     # -----------------------------------------------------------------------
     selected_lang_code   = "en"
     selected_sarvam_code = "en-IN"
+    employee_id          = "Unknown"
+    is_confidential      = False
 
     logger.info("[LANG] Waiting for remote participant to join and provide language metadata...")
     participant_joined = asyncio.Event()
@@ -178,6 +182,13 @@ async def entrypoint(ctx: JobContext):
     if found_participant and found_participant.metadata:
         try:
             meta = json.loads(found_participant.metadata)
+            
+            if "employee_id" in meta:
+                employee_id = meta["employee_id"]
+                
+            if "is_confidential" in meta:
+                is_confidential = meta["is_confidential"]
+                
             if "language_code" in meta:
                 lang_code = meta["language_code"]
                 for _, lang_data in SUPPORTED_LANGUAGES.items():
@@ -191,7 +202,7 @@ async def entrypoint(ctx: JobContext):
             pass
 
     grievance_tracker.set_language(selected_lang_code)
-    logger.info(f"[LANG] Set from metadata → {selected_lang_code} / TTS: {selected_sarvam_code}")
+    logger.info(f"[LANG] Set from metadata → {selected_lang_code} / TTS: {selected_sarvam_code} / emp_id: {employee_id} / confidential: {is_confidential}")
 
     # -----------------------------------------------------------------------
     # Grievance collection session
@@ -284,7 +295,12 @@ async def entrypoint(ctx: JobContext):
     full_log = grievance_tracker.get_full_grievance()
     if full_log.strip():
         logger.info(f"[CLEANUP] Saving transcript ({len(full_log)} chars) to SQLite...")
-        record_id = await db_manager.save_grievance(full_log, selected_lang_code)
+        record_id = await db_manager.save_grievance(
+            transcript=full_log, 
+            language=selected_lang_code,
+            emp_id=employee_id,
+            is_confidential=is_confidential
+        )
         logger.info(f"[CLEANUP] ✓ Saved — ID: {record_id}")
     else:
         logger.warning("[CLEANUP] ⚠ No content to save")
